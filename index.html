@@ -1,229 +1,215 @@
-<!DOCTYPE html>
-<html lang="vi">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML>
+<HEAD>
+  <TITLE> Heart </TITLE>
+  <meta charset="utf-8" />
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: #000;
+    }
+    canvas {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</HEAD>
 
-<head>
-    <meta charset="utf-8" />
-    <title>Heart Night Sky</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-        html,
-        body {
-            height: 100%;
-            margin: 0;
-            /* nền bầu trời đêm */
-            background: radial-gradient(ellipse at center, #0a0f2c 0%, #000 100%);
-            overflow: hidden;
+<BODY>
+  <audio id="bg-music" src="waybackhome.mp3" autoplay loop muted></audio>
+
+  <script>
+    const audio = document.getElementById('bg-music');
+    // khi user click lần đầu → bật tiếng
+    document.body.addEventListener('click', () => {
+      audio.muted = false;
+      audio.play();
+    }, { once: true });
+  </script>
+
+  <canvas id="pinkboard"></canvas>
+
+  <script>
+    var settings = {
+      particles: {
+        length: 2000,
+        duration: 2,
+        velocity: 100,
+        effect: -1.3,
+        size: 13
+      },
+      heartbeat: {
+        bpm: 56,        // số nhịp/phút (giảm để chậm hơn, ví dụ 48)
+        amplitude: 0.15 // biên độ scale tim
+      }
+    };
+
+    // Polyfill rAF
+    (function () {
+      var b = 0; var c = ["ms", "moz", "webkit", "o"];
+      for (var a = 0; a < c.length && !window.requestAnimationFrame; ++a) {
+        window.requestAnimationFrame = window[c[a] + "RequestAnimationFrame"];
+        window.cancelAnimationFrame = window[c[a] + "CancelAnimationFrame"] ||
+                                      window[c[a] + "CancelRequestAnimationFrame"];
+      }
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = function (h, e) {
+          var d = new Date().getTime();
+          var f = Math.max(0, 16 - (d - b));
+          var g = window.setTimeout(function () { h(d + f) }, f);
+          b = d + f; return g;
         }
+      }
+      if (!window.cancelAnimationFrame) {
+        window.cancelAnimationFrame = function (d) { clearTimeout(d) }
+      }
+    })();
 
-        canvas {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            display: block;
+    // Point
+    function Point(x, y) { this.x = x || 0; this.y = y || 0; }
+    Point.prototype.clone = function () { return new Point(this.x, this.y); }
+    Point.prototype.length = function (len) {
+      if (len === undefined) return Math.sqrt(this.x * this.x + this.y * this.y);
+      this.normalize(); this.x *= len; this.y *= len; return this;
+    }
+    Point.prototype.normalize = function () {
+      var l = this.length() || 1; this.x /= l; this.y /= l; return this;
+    }
+
+    // Particle
+    function Particle() {
+      this.position = new Point();
+      this.velocity = new Point();
+      this.acceleration = new Point();
+      this.age = 0;
+    }
+    Particle.prototype.initialize = function (x, y, dx, dy) {
+      this.position.x = x; this.position.y = y;
+      this.velocity.x = dx; this.velocity.y = dy;
+      this.acceleration.x = dx * settings.particles.effect;
+      this.acceleration.y = dy * settings.particles.effect;
+      this.age = 0;
+    };
+    Particle.prototype.update = function (dt) {
+      this.position.x += this.velocity.x * dt;
+      this.position.y += this.velocity.y * dt;
+      this.velocity.x += this.acceleration.x * dt;
+      this.velocity.y += this.acceleration.y * dt;
+      this.age += dt;
+    };
+    Particle.prototype.draw = function (ctx, img) {
+      function ease(t) { return (--t) * t * t + 1; }
+      var size = img.width * ease(this.age / settings.particles.duration);
+      ctx.globalAlpha = 1 - this.age / settings.particles.duration;
+      ctx.drawImage(
+        img,
+        this.position.x - size / 2,
+        this.position.y - size / 2,
+        size, size
+      );
+    };
+
+    // ParticlePool
+    function ParticlePool(length) {
+      this.particles = new Array(length);
+      for (var i = 0; i < this.particles.length; i++) this.particles[i] = new Particle();
+      this.firstActive = 0; this.firstFree = 0;
+      this.duration = settings.particles.duration;
+    }
+    ParticlePool.prototype.add = function (x, y, dx, dy) {
+      this.particles[this.firstFree].initialize(x, y, dx, dy);
+      this.firstFree++; if (this.firstFree == this.particles.length) this.firstFree = 0;
+      if (this.firstActive == this.firstFree) this.firstActive++;
+      if (this.firstActive == this.particles.length) this.firstActive = 0;
+    };
+    ParticlePool.prototype.update = function (dt) {
+      var i;
+      if (this.firstActive < this.firstFree) {
+        for (i = this.firstActive; i < this.firstFree; i++) this.particles[i].update(dt);
+      } else {
+        for (i = this.firstActive; i < this.particles.length; i++) this.particles[i].update(dt);
+        for (i = 0; i < this.firstFree; i++) this.particles[i].update(dt);
+      }
+      while (this.particles[this.firstActive].age >= this.duration &&
+             this.firstActive != this.firstFree) {
+        this.firstActive++; if (this.firstActive == this.particles.length) this.firstActive = 0;
+      }
+    };
+    ParticlePool.prototype.draw = function (ctx, img) {
+      var i;
+      if (this.firstActive < this.firstFree) {
+        for (i = this.firstActive; i < this.firstFree; i++) this.particles[i].draw(ctx, img);
+      } else {
+        for (i = this.firstActive; i < this.particles.length; i++) this.particles[i].draw(ctx, img);
+        for (i = 0; i < this.firstFree; i++) this.particles[i].draw(ctx, img);
+      }
+    };
+
+    // Heart function
+    function pointOnHeart(t) {
+      return new Point(
+        160 * Math.pow(Math.sin(t), 3),
+        130 * Math.cos(t) - 50 * Math.cos(2 * t) - 20 * Math.cos(3 * t) - 10 * Math.cos(4 * t) + 25
+      );
+    }
+
+    // Particle image
+    var image = (function () {
+      var c = document.createElement('canvas'), g = c.getContext('2d');
+      c.width = settings.particles.size; c.height = settings.particles.size;
+      function to(t) {
+        var p = pointOnHeart(t);
+        p.x = settings.particles.size / 2 + p.x * settings.particles.size / 350;
+        p.y = settings.particles.size / 2 - p.y * settings.particles.size / 350;
+        return p;
+      }
+      g.beginPath(); var t = -Math.PI; var p = to(t); g.moveTo(p.x, p.y);
+      while (t < Math.PI) { t += 0.01; p = to(t); g.lineTo(p.x, p.y); }
+      g.closePath(); g.fillStyle = '#FF5CA4'; g.fill();
+      var img = new Image(); img.src = c.toDataURL(); return img;
+    })();
+
+    (function (canvas) {
+      var ctx = canvas.getContext('2d'),
+          pool = new ParticlePool(settings.particles.length),
+          rate = settings.particles.length / settings.particles.duration,
+          time;
+
+      function smoothPulse(time) {
+        var f = settings.heartbeat.bpm / 60;
+        var raw = 0.5 - 0.5 * Math.cos(2 * Math.PI * f * time);
+        return 1 + settings.heartbeat.amplitude * raw;
+      }
+
+      function render() {
+        requestAnimationFrame(render);
+        var newTime = new Date().getTime() / 1000,
+            dt = newTime - (time || newTime); time = newTime;
+        if (dt > 0.1) dt = 0.1;
+
+        var scale = smoothPulse(newTime);
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        var amount = rate * dt;
+        for (var i = 0; i < amount; i++) {
+          var pos = pointOnHeart(Math.PI - 2 * Math.PI * Math.random());
+          pos.x *= scale; pos.y *= scale; // scale theo nhịp đập
+          var dir = pos.clone().length(settings.particles.velocity);
+          pool.add(canvas.width / 2 + pos.x, canvas.height / 2 - pos.y, dir.x, -dir.y);
         }
+        pool.update(dt);
+        pool.draw(ctx, image);
+      }
 
-        /* ngôi sao lấp lánh */
-        .star {
-            position: absolute;
-            background: white;
-            border-radius: 50%;
-            opacity: 0.8;
-            animation: twinkle 2s infinite ease-in-out;
-        }
-
-        @keyframes twinkle {
-
-            0%,
-            100% {
-                opacity: 0.8;
-                transform: scale(1);
-            }
-
-            50% {
-                opacity: 0.3;
-                transform: scale(0.6);
-            }
-        }
-    </style>
-</head>
-
-<body>
-    <audio id="bg-music" src="waybackhome.mp3" autoplay loop muted></audio>
-    <script>
-        const audio = document.getElementById('bg-music');
-        document.body.addEventListener('click', () => {
-            audio.muted = false;
-            audio.play();
-        }, { once: true });
-
-        // tạo sao ngẫu nhiên
-        const numStars = 70;
-        for (let i = 0; i < numStars; i++) {
-            const star = document.createElement('div');
-            star.className = 'star';
-            const size = Math.random() * 2 + 1; // 1–3px
-            star.style.width = size + 'px';
-            star.style.height = size + 'px';
-            star.style.left = Math.random() * 100 + '%';
-            star.style.top = Math.random() * 100 + '%';
-            star.style.animationDuration = (2 + Math.random() * 3) + 's';
-            document.body.appendChild(star);
-        }
-    </script>
-
-    <canvas id="pinkboard"></canvas>
-    <script>
-        var settings = {
-            particles: {
-                length: 2000,
-                duration: 2,
-                velocity: 100,
-                effect: -1.3,
-                size: 13
-            },
-            heartbeat: {
-                bpm: 56,
-                amplitude: 0.15
-            }
-        };
-
-        // Polyfill rAF
-        (function () {
-            var b = 0; var c = ["ms", "moz", "webkit", "o"];
-            for (var a = 0; a < c.length && !window.requestAnimationFrame; ++a) {
-                window.requestAnimationFrame = window[c[a] + "RequestAnimationFrame"];
-                window.cancelAnimationFrame = window[c[a] + "CancelAnimationFrame"] || window[c[a] + "CancelRequestAnimationFrame"];
-            }
-            if (!window.requestAnimationFrame) {
-                window.requestAnimationFrame = function (h) {
-                    var d = new Date().getTime();
-                    var f = Math.max(0, 16 - (d - b));
-                    var g = window.setTimeout(function () { h(d + f) }, f);
-                    b = d + f; return g;
-                }
-            }
-            if (!window.cancelAnimationFrame) {
-                window.cancelAnimationFrame = function (d) { clearTimeout(d); }
-            }
-        })();
-
-        // Point
-        function Point(x, y) { this.x = x || 0; this.y = y || 0; }
-        Point.prototype.clone = function () { return new Point(this.x, this.y); }
-        Point.prototype.length = function (len) { if (len === undefined) return Math.sqrt(this.x * this.x + this.y * this.y); this.normalize(); this.x *= len; this.y *= len; return this; }
-        Point.prototype.normalize = function () { var l = this.length() || 1; this.x /= l; this.y /= l; return this; }
-
-        // Particle
-        function Particle() { this.position = new Point(); this.velocity = new Point(); this.acceleration = new Point(); this.age = 0; }
-        Particle.prototype.initialize = function (x, y, dx, dy) {
-            this.position.x = x; this.position.y = y; this.velocity.x = dx; this.velocity.y = dy;
-            this.acceleration.x = dx * settings.particles.effect;
-            this.acceleration.y = dy * settings.particles.effect;
-            this.age = 0;
-        };
-        Particle.prototype.update = function (dt) {
-            this.position.x += this.velocity.x * dt;
-            this.position.y += this.velocity.y * dt;
-            this.velocity.x += this.acceleration.x * dt;
-            this.velocity.y += this.acceleration.y * dt;
-            this.age += dt;
-        };
-        Particle.prototype.draw = function (ctx, img) {
-            function ease(t) { return (--t) * t * t + 1; }
-            var size = img.width * ease(this.age / settings.particles.duration);
-            ctx.globalAlpha = 1 - this.age / settings.particles.duration;
-            ctx.drawImage(img, this.position.x - size / 2, this.position.y - size / 2, size, size);
-        };
-
-        // ParticlePool
-        function ParticlePool(length) {
-            this.particles = new Array(length);
-            for (var i = 0; i < this.particles.length; i++)this.particles[i] = new Particle();
-            this.firstActive = 0; this.firstFree = 0; this.duration = settings.particles.duration;
-        }
-        ParticlePool.prototype.add = function (x, y, dx, dy) {
-            this.particles[this.firstFree].initialize(x, y, dx, dy);
-            this.firstFree++; if (this.firstFree == this.particles.length) this.firstFree = 0;
-            if (this.firstActive == this.firstFree) this.firstActive++;
-            if (this.firstActive == this.particles.length) this.firstActive = 0;
-        };
-        ParticlePool.prototype.update = function (dt) {
-            var i;
-            if (this.firstActive < this.firstFree) {
-                for (i = this.firstActive; i < this.firstFree; i++)this.particles[i].update(dt);
-            } else {
-                for (i = this.firstActive; i < this.particles.length; i++)this.particles[i].update(dt);
-                for (i = 0; i < this.firstFree; i++)this.particles[i].update(dt);
-            }
-            while (this.particles[this.firstActive].age >= this.duration && this.firstActive != this.firstFree) {
-                this.firstActive++; if (this.firstActive == this.particles.length) this.firstActive = 0;
-            }
-        };
-        ParticlePool.prototype.draw = function (ctx, img) {
-            var i;
-            if (this.firstActive < this.firstFree) {
-                for (i = this.firstActive; i < this.firstFree; i++)this.particles[i].draw(ctx, img);
-            } else {
-                for (i = this.firstActive; i < this.particles.length; i++)this.particles[i].draw(ctx, img);
-                for (i = 0; i < this.firstFree; i++)this.particles[i].draw(ctx, img);
-            }
-        };
-
-        // Heart function
-        function pointOnHeart(t) {
-            return new Point(
-                160 * Math.pow(Math.sin(t), 3),
-                130 * Math.cos(t) - 50 * Math.cos(2 * t) - 20 * Math.cos(3 * t) - 10 * Math.cos(4 * t) + 25
-            );
-        }
-
-        // Particle image
-        var image = (function () {
-            var c = document.createElement('canvas'), g = c.getContext('2d');
-            c.width = settings.particles.size; c.height = settings.particles.size;
-            function to(t) {
-                var p = pointOnHeart(t);
-                p.x = settings.particles.size / 2 + p.x * settings.particles.size / 350;
-                p.y = settings.particles.size / 2 - p.y * settings.particles.size / 350;
-                return p;
-            }
-            g.beginPath(); var t = -Math.PI; var p = to(t); g.moveTo(p.x, p.y);
-            while (t < Math.PI) { t += 0.01; p = to(t); g.lineTo(p.x, p.y); }
-            g.closePath(); g.fillStyle = '#FF5CA4'; g.fill();
-            var img = new Image(); img.src = c.toDataURL(); return img;
-        })();
-
-        (function (canvas) {
-            var ctx = canvas.getContext('2d'),
-                pool = new ParticlePool(settings.particles.length),
-                rate = settings.particles.length / settings.particles.duration,
-                time;
-            function smoothPulse(time) {
-                var f = settings.heartbeat.bpm / 60;
-                var raw = 0.5 - 0.5 * Math.cos(2 * Math.PI * f * time);
-                return 1 + settings.heartbeat.amplitude * raw;
-            }
-            function render() {
-                requestAnimationFrame(render);
-                var newTime = new Date().getTime() / 1000,
-                    dt = newTime - (time || newTime); time = newTime;
-                if (dt > 0.1) dt = 0.1;
-                var scale = smoothPulse(newTime);
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                var amount = rate * dt;
-                for (var i = 0; i < amount; i++) {
-                    var pos = pointOnHeart(Math.PI - 2 * Math.PI * Math.random());
-                    pos.x *= scale; pos.y *= scale;
-                    var dir = pos.clone().length(settings.particles.velocity);
-                    pool.add(canvas.width / 2 + pos.x, canvas.height / 2 - pos.y, dir.x, -dir.y);
-                }
-                pool.update(dt);
-                pool.draw(ctx, image);
-            }
-            function onResize() { canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight; }
-            window.onresize = onResize; setTimeout(function () { onResize(); render(); }, 10);
-        })(document.getElementById('pinkboard'));
-    </script>
-</body>
-
-</html>
+      function onResize() {
+        canvas.width = canvas.clientWidth;
+        canvas.height = canvas.clientHeight;
+      }
+      window.onresize = onResize;
+      setTimeout(function () { onResize(); render(); }, 10);
+    })(document.getElementById('pinkboard'));
+  </script>
+</BODY>
+</HTML>
